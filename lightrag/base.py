@@ -158,6 +158,9 @@ class QueryParam:
     Default is True to enable reranking when rerank model is available.
     """
 
+    ids: list[str] | None = None
+    """List of document ids to filter the results."""
+
 
 @dataclass
 class StorageNameSpace(ABC):
