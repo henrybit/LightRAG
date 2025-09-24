@@ -1809,8 +1809,10 @@ class MongoVectorDBStorage(BaseVectorStorage):
 
         return list_data
 
+    # TODO: Implement filtering by doc_id if needed
     async def query(
-        self, query: str, top_k: int, query_embedding: list[float] = None
+        self, query: str, top_k: int, query_embedding: list[float] = None,
+        doc_id: str = None
     ) -> list[dict[str, Any]]:
         """Queries the vector database using Atlas Vector Search."""
         if query_embedding is not None:

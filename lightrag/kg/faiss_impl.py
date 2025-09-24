@@ -179,8 +179,10 @@ class FaissVectorDBStorage(BaseVectorStorage):
         )
         return [m["__id__"] for m in list_data]
 
+    # doc_id: TODO: filter by doc_id if provided
     async def query(
-        self, query: str, top_k: int, query_embedding: list[float] = None
+        self, query: str, top_k: int, query_embedding: list[float] = None,
+        doc_id: str = None
     ) -> list[dict[str, Any]]:
         """
         Search by a textual query; returns top_k results with their metadata + similarity distance.

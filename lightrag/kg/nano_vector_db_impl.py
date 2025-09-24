@@ -136,8 +136,10 @@ class NanoVectorDBStorage(BaseVectorStorage):
                 f"[{self.workspace}] embedding is not 1-1 with data, {len(embeddings)} != {len(list_data)}"
             )
 
+    # TODO: add doc_id filter
     async def query(
-        self, query: str, top_k: int, query_embedding: list[float] = None
+        self, query: str, top_k: int, query_embedding: list[float] = None,
+        doc_id: str = None
     ) -> list[dict[str, Any]]:
         # Use provided embedding or compute it
         if query_embedding is not None:

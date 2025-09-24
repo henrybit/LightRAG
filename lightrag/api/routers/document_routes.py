@@ -11,6 +11,7 @@ import pipmaster as pm
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Literal
+import uuid
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -1156,7 +1157,9 @@ async def pipeline_enqueue_file(
                     f"[File Extraction]File contains only whitespace characters: {file_path.name}"
                 )
                 return False, track_id
-
+            # create uuid for this document
+            # TODO
+            document_uuid = uuid.uuid4().hex
             try:
                 await rag.apipeline_enqueue_documents(
                     content, file_paths=file_path.name, track_id=track_id

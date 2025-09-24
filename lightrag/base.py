@@ -71,7 +71,7 @@ class OllamaServerInfos:
 class TextChunkSchema(TypedDict):
     tokens: int
     content: str
-    full_doc_id: str
+    doc_id: str
     chunk_order_index: int
 
 
@@ -161,6 +161,8 @@ class QueryParam:
     ids: list[str] | None = None
     """List of document ids to filter the results."""
 
+    doc_id: str | None = None
+    """Document ID to filter the text chunks. If provided, only chunks from this document will be considered."""
 
 @dataclass
 class StorageNameSpace(ABC):
@@ -215,7 +217,8 @@ class BaseVectorStorage(StorageNameSpace, ABC):
 
     @abstractmethod
     async def query(
-        self, query: str, top_k: int, query_embedding: list[float] = None
+        self, query: str, top_k: int, query_embedding: list[float] = None,
+        doc_id: str = None
     ) -> list[dict[str, Any]]:
         """Query the vector storage and retrieve top_k results.
 
@@ -378,6 +381,18 @@ class BaseGraphStorage(StorageNameSpace, ABC):
         """
 
     @abstractmethod
+    async def node_degree_inDoc(self, node_id: str, doc_id: str) -> int:
+        """Get the degree (number of connected edges) of a node within a specific document.
+
+        Args:
+            node_id: The ID of the node
+            doc_id: The ID of the document
+
+        Returns:
+            The number of edges connected to the node within the specified document
+        """
+
+    @abstractmethod
     async def node_degree(self, node_id: str) -> int:
         """Get the degree (number of connected edges) of a node.
 
@@ -398,6 +413,17 @@ class BaseGraphStorage(StorageNameSpace, ABC):
 
         Returns:
             The sum of the degrees of the source and target nodes
+        """
+
+    @abstractmethod
+    async def get_node_inDoc(self, node_id: str, doc_id: str) -> dict[str, str] | None:
+        """Get node by its ID within a specific document, returning only node properties.
+
+        Args:
+            node_id: The ID of the node to retrieve
+            doc_id: The ID of the document to filter by (only return node if it has edges in this document)
+        Returns:
+            A dictionary of node properties if found, None otherwise
         """
 
     @abstractmethod
@@ -437,6 +463,20 @@ class BaseGraphStorage(StorageNameSpace, ABC):
             or None if the node doesn't exist
         """
 
+    async def get_nodes_batch_inDoc(self, node_ids: list[str], doc_id: str) -> dict[str, dict]:
+        """Get nodes as a batch using UNWIND
+
+        Default implementation fetches nodes one by one.
+        Override this method for better performance in storage backends
+        that support batch operations.
+        """
+        result = {}
+        for node_id in node_ids:
+            node = await self.get_node_inDoc(node_id, doc_id)
+            if node is not None:
+                result[node_id] = node
+        return result
+
     async def get_nodes_batch(self, node_ids: list[str]) -> dict[str, dict]:
         """Get nodes as a batch using UNWIND
 
@@ -449,6 +489,19 @@ class BaseGraphStorage(StorageNameSpace, ABC):
             node = await self.get_node(node_id)
             if node is not None:
                 result[node_id] = node
+        return result
+
+    async def node_degrees_batch_inDoc(self, node_ids: list[str], doc_id: str) -> dict[str, int]:
+        """Node degrees as a batch using UNWIND
+
+        Default implementation fetches node degrees one by one.
+        Override this method for better performance in storage backends
+        that support batch operations.
+        """
+        result = {}
+        for node_id in node_ids:
+            degree = await self.node_degree_inDoc(node_id, doc_id)
+            result[node_id] = degree
         return result
 
     async def node_degrees_batch(self, node_ids: list[str]) -> dict[str, int]:

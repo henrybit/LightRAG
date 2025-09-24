@@ -164,7 +164,8 @@ class ChromaVectorDBStorage(BaseVectorStorage):
             logger.error(f"Error during ChromaDB upsert: {str(e)}")
             raise
 
-    async def query(self, query: str, top_k: int) -> list[dict[str, Any]]:
+    # doc_id: TODO: filter by doc_id if provided
+    async def query(self, query: str, top_k: int, doc_id: str = None) -> list[dict[str, Any]]:
         try:
             embedding = await self.embedding_func(
                 [query], _priority=5

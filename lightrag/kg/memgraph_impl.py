@@ -194,6 +194,62 @@ class MemgraphStorage(BaseGraphStorage):
                 await result.consume()  # Ensure the result is consumed even on error
                 raise
 
+    async def get_node_inDoc(self, node_id: str, doc_id: str) -> dict[str, str] | None:
+        """Get node by its label identifier within a specific document, return only node properties
+
+        Args:
+            node_id: The node label to look up
+            doc_id: The document ID to filter nodes
+
+        Returns:
+            dict: Node properties if found
+            None: If node not found
+
+        Raises:
+            Exception: If there is an error executing the query
+        """
+        if self._driver is None:
+            raise RuntimeError(
+                "Memgraph driver is not initialized. Call 'await initialize()' first."
+            )
+        async with self._driver.session(
+            database=self._DATABASE, default_access_mode="READ"
+        ) as session:
+            try:
+                workspace_label = self._get_workspace_label()
+                query = (
+                    f"MATCH (n:`{workspace_label}` {{entity_id: $entity_id, doc_id: $doc_id}}) RETURN n"
+                )
+                result = await session.run(query, entity_id=node_id, doc_id=doc_id)
+                try:
+                    records = await result.fetch(
+                        2
+                    )  # Get 2 records for duplication check
+
+                    if len(records) > 1:
+                        logger.warning(
+                            f"[{self.workspace}] Multiple nodes found with label '{node_id}' in document '{doc_id}'. Using first node."
+                        )
+                    if records:
+                        node = records[0]["n"]
+                        node_dict = dict(node)
+                        # Remove workspace label from labels list if it exists
+                        if "labels" in node_dict:
+                            node_dict["labels"] = [
+                                label
+                                for label in node_dict["labels"]
+                                if label != workspace_label
+                            ]
+                        return node_dict
+                    return None
+                finally:
+                    await result.consume()  # Ensure result is fully consumed
+            except Exception as e:
+                logger.error(
+                    f"[{self.workspace}] Error getting node for {node_id} in document {doc_id}: {str(e)}"
+                )
+                raise
+
     async def get_node(self, node_id: str) -> dict[str, str] | None:
         """Get node by its label identifier, return only node properties
 

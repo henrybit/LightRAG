@@ -98,6 +98,11 @@ class QueryRequest(BaseModel):
         description="Enable reranking for retrieved text chunks. If True but no rerank model is configured, a warning will be issued. Default is True.",
     )
 
+    doc_id: Optional[str] = Field(
+        default=None,
+        description="Document ID to filter the text chunks. If provided, only chunks from this document will be considered.",
+    )
+
     @field_validator("query", mode="after")
     @classmethod
     def query_strip_after(cls, query: str) -> str:

@@ -47,6 +47,9 @@ class MilvusVectorDBStorage(BaseVectorStorage):
                     nullable=True,
                 ),
                 FieldSchema(
+                    name="doc_id", dtype=DataType.VARCHAR, max_length=64, nullable=True
+                ),
+                FieldSchema(
                     name="file_path",
                     dtype=DataType.VARCHAR,
                     max_length=DEFAULT_MAX_FILE_PATH_LENGTH,
@@ -64,6 +67,9 @@ class MilvusVectorDBStorage(BaseVectorStorage):
                     name="tgt_id", dtype=DataType.VARCHAR, max_length=512, nullable=True
                 ),
                 FieldSchema(
+                    name="doc_id", dtype=DataType.VARCHAR, max_length=64, nullable=True
+                ),
+                FieldSchema(
                     name="file_path",
                     dtype=DataType.VARCHAR,
                     max_length=DEFAULT_MAX_FILE_PATH_LENGTH,
@@ -75,7 +81,7 @@ class MilvusVectorDBStorage(BaseVectorStorage):
         elif self.namespace.endswith("chunks"):
             specific_fields = [
                 FieldSchema(
-                    name="full_doc_id",
+                    name="doc_id",
                     dtype=DataType.VARCHAR,
                     max_length=64,
                     nullable=True,
@@ -271,7 +277,7 @@ class MilvusVectorDBStorage(BaseVectorStorage):
                     try:
                         doc_id_index = self._get_index_params()
                         doc_id_index.add_index(
-                            field_name="full_doc_id", index_type="INVERTED"
+                            field_name="doc_id", index_type="INVERTED"
                         )
                         self._client.create_index(
                             collection_name=self.final_namespace,
@@ -279,9 +285,9 @@ class MilvusVectorDBStorage(BaseVectorStorage):
                         )
                     except Exception as e:
                         logger.debug(
-                            f"[{self.workspace}] IndexParams method failed for full_doc_id: {e}"
+                            f"[{self.workspace}] IndexParams method failed for doc_id: {e}"
                         )
-                        self._create_scalar_index_fallback("full_doc_id", "INVERTED")
+                        self._create_scalar_index_fallback("doc_id", "INVERTED")
 
                 # No common indexes needed
 
@@ -301,7 +307,7 @@ class MilvusVectorDBStorage(BaseVectorStorage):
                     self._create_scalar_index_fallback("src_id", "INVERTED")
                     self._create_scalar_index_fallback("tgt_id", "INVERTED")
                 elif self.namespace.endswith("chunks"):
-                    self._create_scalar_index_fallback("full_doc_id", "INVERTED")
+                    self._create_scalar_index_fallback("doc_id", "INVERTED")
 
             logger.info(
                 f"[{self.workspace}] Created indexes for collection: {self.namespace}"
@@ -336,7 +342,7 @@ class MilvusVectorDBStorage(BaseVectorStorage):
             }
         elif self.namespace.endswith("chunks"):
             specific_fields = {
-                "full_doc_id": {"type": "VarChar"},
+                "doc_id": {"type": "VarChar"},
                 "file_path": {"type": "VarChar"},
             }
         else:
@@ -1047,7 +1053,8 @@ class MilvusVectorDBStorage(BaseVectorStorage):
         return results
 
     async def query(
-        self, query: str, top_k: int, query_embedding: list[float] = None
+        self, query: str, top_k: int, query_embedding: list[float] = None,
+        doc_id: str = None
     ) -> list[dict[str, Any]]:
         # Ensure collection is loaded before querying
         self._ensure_collection_loaded()
@@ -1062,10 +1069,13 @@ class MilvusVectorDBStorage(BaseVectorStorage):
 
         # Include all meta_fields (created_at is now always included)
         output_fields = list(self.meta_fields)
-
+        filter_expr = None  # No filtering for now
+        if doc_id:
+            filter_expr = f'doc_id == "{doc_id}"'
         results = self._client.search(
             collection_name=self.final_namespace,
             data=embedding,
+            filter=filter_expr,
             limit=top_k,
             output_fields=output_fields,
             search_params={

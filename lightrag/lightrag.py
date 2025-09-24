@@ -536,19 +536,19 @@ class LightRAG:
             namespace=NameSpace.VECTOR_STORE_ENTITIES,
             workspace=self.workspace,
             embedding_func=self.embedding_func,
-            meta_fields={"entity_name", "source_id", "content", "file_path"},
+            meta_fields={"entity_name", "source_id", "doc_id", "content", "file_path"},
         )
         self.relationships_vdb: BaseVectorStorage = self.vector_db_storage_cls(  # type: ignore
             namespace=NameSpace.VECTOR_STORE_RELATIONSHIPS,
             workspace=self.workspace,
             embedding_func=self.embedding_func,
-            meta_fields={"src_id", "tgt_id", "source_id", "content", "file_path"},
+            meta_fields={"src_id", "tgt_id", "source_id", "doc_id", "content", "file_path"},
         )
         self.chunks_vdb: BaseVectorStorage = self.vector_db_storage_cls(  # type: ignore
             namespace=NameSpace.VECTOR_STORE_CHUNKS,
             workspace=self.workspace,
             embedding_func=self.embedding_func,
-            meta_fields={"full_doc_id", "content", "file_path"},
+            meta_fields={"doc_id", "content", "file_path"},
         )
 
         # Initialize document status storage
@@ -976,7 +976,7 @@ class LightRAG:
                 tokens = len(self.tokenizer.encode(chunk_text))
                 inserting_chunks[chunk_key] = {
                     "content": chunk_text,
-                    "full_doc_id": doc_key,
+                    "doc_id": doc_key,
                     "tokens": tokens,
                     "chunk_order_index": index,
                     "file_path": file_path,
@@ -1525,7 +1525,7 @@ class LightRAG:
                             chunks: dict[str, Any] = {
                                 compute_mdhash_id(dp["content"], prefix="chunk-"): {
                                     **dp,
-                                    "full_doc_id": doc_id,
+                                    "doc_id": doc_id,
                                     "file_path": file_path,  # Add file path to each chunk
                                     "llm_cache_list": [],  # Initialize empty LLM cache list for each chunk
                                 }
@@ -1852,15 +1852,15 @@ class LightRAG:
                 pipeline_status["history_messages"].append(log_message)
 
     def insert_custom_kg(
-        self, custom_kg: dict[str, Any], full_doc_id: str = None
+        self, custom_kg: dict[str, Any], doc_id: str = None
     ) -> None:
         loop = always_get_an_event_loop()
-        loop.run_until_complete(self.ainsert_custom_kg(custom_kg, full_doc_id))
+        loop.run_until_complete(self.ainsert_custom_kg(custom_kg, doc_id))
 
     async def ainsert_custom_kg(
         self,
         custom_kg: dict[str, Any],
-        full_doc_id: str = None,
+        doc_id: str = None,
     ) -> None:
         update_storage = False
         try:
@@ -1884,8 +1884,8 @@ class LightRAG:
                     "source_id": source_id,
                     "tokens": tokens,
                     "chunk_order_index": chunk_order_index,
-                    "full_doc_id": full_doc_id
-                    if full_doc_id is not None
+                    "doc_id": doc_id
+                    if doc_id is not None
                     else source_id,
                     "file_path": file_path,
                     "status": DocStatus.PROCESSED,
@@ -2596,6 +2596,7 @@ class LightRAG:
                         global_config=asdict(self),
                         pipeline_status=pipeline_status,
                         pipeline_status_lock=pipeline_status_lock,
+                        doc_id=doc_id,
                     )
 
                 except Exception as e:

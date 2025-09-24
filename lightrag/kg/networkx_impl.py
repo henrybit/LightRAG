@@ -102,6 +102,9 @@ class NetworkXStorage(BaseGraphStorage):
         graph = await self._get_graph()
         return graph.has_edge(source_node_id, target_node_id)
 
+    # TODO: implement get_node_inDoc by networkx
+    async def get_node_inDoc(self, node_id, doc_id):...
+
     async def get_node(self, node_id: str) -> dict[str, str] | None:
         graph = await self._get_graph()
         return graph.nodes.get(node_id)

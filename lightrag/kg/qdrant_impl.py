@@ -211,8 +211,10 @@ class QdrantVectorDBStorage(BaseVectorStorage):
         )
         return results
 
+    # doc_id: TODO: filter by doc_id if provided
     async def query(
-        self, query: str, top_k: int, query_embedding: list[float] = None
+        self, query: str, top_k: int, query_embedding: list[float] = None,
+        doc_id: str = None
     ) -> list[dict[str, Any]]:
         if query_embedding is not None:
             embedding = query_embedding

@@ -324,6 +324,60 @@ class Neo4JStorage(BaseGraphStorage):
                 await result.consume()  # Ensure results are consumed even on error
                 raise
 
+    async def get_node_inDoc(self, node_id: str, doc_id: str) -> dict[str, str] | None:
+        """Get node by its label identifier and doc_id, return only node properties
+
+        Args:
+            node_id: The node label to look up
+            doc_id: The document ID to filter nodes
+
+        Returns:
+            dict: Node properties if found
+            None: If node not found
+
+        Raises:
+            ValueError: If node_id is invalid
+            Exception: If there is an error executing the query
+        """
+        workspace_label = self._get_workspace_label()
+        async with self._driver.session(
+            database=self._DATABASE, default_access_mode="READ"
+        ) as session:
+            try:
+                query = (
+                    f"MATCH (n:`{workspace_label}` {{entity_id: $entity_id, doc_id: $doc_id}}) RETURN n"
+                )
+                result = await session.run(query, entity_id=node_id, doc_id=doc_id)
+                try:
+                    records = await result.fetch(
+                        2
+                    )  # Get 2 records for duplication check
+
+                    if len(records) > 1:
+                        logger.warning(
+                            f"[{self.workspace}] Multiple nodes found with label '{node_id}' and doc_id '{doc_id}'. Using first node."
+                        )
+                    if records:
+                        node = records[0]["n"]
+                        node_dict = dict(node)
+                        # Remove workspace label from labels list if it exists
+                        if "labels" in node_dict:
+                            node_dict["labels"] = [
+                                label
+                                for label in node_dict["labels"]
+                                if label != workspace_label
+                            ]
+                        # logger.debug(f"Neo4j query node {query} return: {node_dict}")
+                        return node_dict
+                    return None
+                finally:
+                    await result.consume()  # Ensure result is fully consumed
+            except Exception as e:
+                logger.error(
+                    f"[{self.workspace}] Error getting node for {node_id} in doc {doc_id}: {str(e)}"
+                )
+                raise
+
     async def get_node(self, node_id: str) -> dict[str, str] | None:
         """Get node by its label identifier, return only node properties
 
@@ -377,6 +431,43 @@ class Neo4JStorage(BaseGraphStorage):
                 )
                 raise
 
+    async def get_nodes_batch_inDoc(self, node_ids: list[str], doc_id: str) -> dict[str, dict]:
+        """
+        Retrieve multiple nodes in one query using UNWIND.
+
+        Args:
+            node_ids: List of node entity IDs to fetch.
+
+        Returns:
+            A dictionary mapping each node_id to its node data (or None if not found).
+        """
+        workspace_label = self._get_workspace_label()
+        async with self._driver.session(
+            database=self._DATABASE, default_access_mode="READ"
+        ) as session:
+            query = f"""
+            UNWIND $node_ids AS id
+            MATCH (n:`{workspace_label}` {{entity_id: id}})
+            WHERE n.doc_id = $doc_id
+            RETURN n.entity_id AS entity_id, n
+            """
+            result = await session.run(query, node_ids=node_ids, doc_id=doc_id)
+            nodes = {}
+            async for record in result:
+                entity_id = record["entity_id"]
+                node = record["n"]
+                node_dict = dict(node)
+                # Remove the workspace label if present in a 'labels' property
+                if "labels" in node_dict:
+                    node_dict["labels"] = [
+                        label
+                        for label in node_dict["labels"]
+                        if label != workspace_label
+                    ]
+                nodes[entity_id] = node_dict
+            await result.consume()  # Make sure to consume the result fully
+            return nodes        
+
     async def get_nodes_batch(self, node_ids: list[str]) -> dict[str, dict]:
         """
         Retrieve multiple nodes in one query using UNWIND.
@@ -412,6 +503,55 @@ class Neo4JStorage(BaseGraphStorage):
                 nodes[entity_id] = node_dict
             await result.consume()  # Make sure to consume the result fully
             return nodes
+
+    async def node_degree_inDoc(self, node_id: str, doc_id: str) -> int:
+        """Get the degree (number of relationships) of a node with the given label and doc_id.
+        If multiple nodes have the same label, returns the degree of the first node.
+        If no node is found, returns 0.
+
+        Args:
+            node_id: The label of the node
+            doc_id: The document ID to filter nodes
+
+        Returns:
+            int: The number of relationships the node has, or 0 if no node found
+
+        Raises:
+            ValueError: If node_id is invalid
+            Exception: If there is an error executing the query
+        """
+        workspace_label = self._get_workspace_label()
+        async with self._driver.session(
+            database=self._DATABASE, default_access_mode="READ"
+        ) as session:
+            try:
+                query = f"""
+                    MATCH (n:`{workspace_label}` {{entity_id: $entity_id, doc_id: $doc_id}})
+                    OPTIONAL MATCH (n)-[r]-()
+                    RETURN COUNT(r) AS degree
+                """
+                result = await session.run(query, entity_id=node_id, doc_id=doc_id)
+                try:
+                    record = await result.single()
+
+                    if not record:
+                        logger.warning(
+                            f"[{self.workspace}] No node found with label '{node_id}' in doc '{doc_id}'"
+                        )
+                        return 0
+
+                    degree = record["degree"]
+                    # logger.debug(
+                    #     f"[{self.workspace}] Neo4j query node degree for {node_id} in doc {doc_id} return: {degree}"
+                    # )
+                    return degree
+                finally:
+                    await result.consume()  # Ensure result is fully consumed
+            except Exception as e:
+                logger.error(
+                    f"[{self.workspace}] Error getting node degree for {node_id} in doc {doc_id}: {str(e)}"
+                )
+                raise
 
     async def node_degree(self, node_id: str) -> int:
         """Get the degree (number of relationships) of a node with the given label.
@@ -460,6 +600,45 @@ class Neo4JStorage(BaseGraphStorage):
                     f"[{self.workspace}] Error getting node degree for {node_id}: {str(e)}"
                 )
                 raise
+
+    async def node_degrees_batch_inDoc(self, node_ids: list[str], doc_id: str) -> dict[str, int]:
+        """
+        Retrieve the degree for multiple nodes in a single query using UNWIND.
+
+        Args:
+            node_ids: List of node labels (entity_id values) to look up.
+            doc_id: The document ID to filter nodes
+        Returns:
+            A dictionary mapping each node_id to its degree (number of relationships).
+            If a node is not found, its degree will be set to 0.
+        """
+        workspace_label = self._get_workspace_label()
+        async with self._driver.session(
+            database=self._DATABASE, default_access_mode="READ"
+        ) as session:
+            query = f"""
+                UNWIND $node_ids AS id
+                MATCH (n:`{workspace_label}` {{entity_id: id}})
+                WHERE n.doc_id = $doc_id
+                RETURN n.entity_id AS entity_id, count {{ (n)--() }} AS degree;
+            """
+            result = await session.run(query, node_ids=node_ids, doc_id=doc_id)
+            degrees = {}
+            async for record in result:
+                entity_id = record["entity_id"]
+                degrees[entity_id] = record["degree"]
+            await result.consume()  # Ensure result is fully consumed
+
+            # For any node_id that did not return a record, set degree to 0.
+            for nid in node_ids:
+                if nid not in degrees:
+                    logger.warning(
+                        f"[{self.workspace}] No node found with label '{nid}' in doc '{doc_id}'"
+                    )
+                    degrees[nid] = 0
+
+            # logger.debug(f"[{self.workspace}] Neo4j batch node degree query returned: {degrees}")
+            return degrees
 
     async def node_degrees_batch(self, node_ids: list[str]) -> dict[str, int]:
         """

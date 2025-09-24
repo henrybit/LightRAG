@@ -446,11 +446,11 @@ class PostgreSQLDB:
             )
             migration_sql = """
             INSERT INTO LIGHTRAG_VDB_CHUNKS (
-                id, workspace, full_doc_id, chunk_order_index, tokens, content,
+                id, workspace, doc_id, chunk_order_index, tokens, content,
                 content_vector, file_path, create_time, update_time
             )
             SELECT
-                id, workspace, full_doc_id, chunk_order_index, tokens, content,
+                id, workspace, doc_id, chunk_order_index, tokens, content,
                 content_vector, file_path, create_time, update_time
             FROM LIGHTRAG_DOC_CHUNKS
             ON CONFLICT (workspace, id) DO NOTHING;
@@ -1736,7 +1736,7 @@ class PGKVStorage(BaseKVStorage):
                     "id": k,
                     "tokens": v["tokens"],
                     "chunk_order_index": v["chunk_order_index"],
-                    "full_doc_id": v["full_doc_id"],
+                    "doc_id": v["doc_id"],
                     "content": v["content"],
                     "file_path": v["file_path"],
                     "llm_cache_list": json.dumps(v.get("llm_cache_list", [])),
@@ -1902,7 +1902,7 @@ class PGVectorStorage(BaseVectorStorage):
                 "id": item["__id__"],
                 "tokens": item["tokens"],
                 "chunk_order_index": item["chunk_order_index"],
-                "full_doc_id": item["full_doc_id"],
+                "doc_id": item["doc_id"],
                 "content": item["content"],
                 "content_vector": json.dumps(item["__vector__"].tolist()),
                 "file_path": item["file_path"],
@@ -2003,8 +2003,10 @@ class PGVectorStorage(BaseVectorStorage):
             await self.db.execute(upsert_sql, data)
 
     #################### query method ###############
+    # TODO: doc_id is not used, need to support it
     async def query(
-        self, query: str, top_k: int, query_embedding: list[float] = None
+        self, query: str, top_k: int, query_embedding: list[float] = None,
+        doc_id: str = None
     ) -> list[dict[str, Any]]:
         if query_embedding is not None:
             embedding = query_embedding
@@ -3155,6 +3157,9 @@ class PGGraphStorage(BaseGraphStorage):
         row = (await self._query(query, params=params))[0]
         return bool(row["edge_exists"])
 
+    # TODO: implement get_node_inDoc by postgresql
+    async def get_node_inDoc(self, node_id: str, doc_id: str) -> dict[str, str] | None: ...
+
     async def get_node(self, node_id: str) -> dict[str, str] | None:
         """Get node by its label identifier, return only node properties"""
 
@@ -3367,6 +3372,11 @@ class PGGraphStorage(BaseGraphStorage):
             except Exception as e:
                 logger.error(f"[{self.workspace}] Error during edge deletion: {str(e)}")
                 raise
+
+    # TODO: implement get_nodes_batch_inDoc with UNWIND by postgresql
+    async def get_nodes_batch_inDoc(
+        self, node_ids: list[str], doc_id: str, batch_size: int = 1000
+    ) -> dict[str, dict]: ...
 
     async def get_nodes_batch(
         self, node_ids: list[str], batch_size: int = 1000
@@ -4316,7 +4326,7 @@ TABLES = {
         "ddl": """CREATE TABLE LIGHTRAG_DOC_CHUNKS (
                     id VARCHAR(255),
                     workspace VARCHAR(255),
-                    full_doc_id VARCHAR(256),
+                    doc_id VARCHAR(256),
                     chunk_order_index INTEGER,
                     tokens INTEGER,
                     content TEXT,
@@ -4331,7 +4341,7 @@ TABLES = {
         "ddl": f"""CREATE TABLE LIGHTRAG_VDB_CHUNKS (
                     id VARCHAR(255),
                     workspace VARCHAR(255),
-                    full_doc_id VARCHAR(256),
+                    doc_id VARCHAR(256),
                     chunk_order_index INTEGER,
                     tokens INTEGER,
                     content TEXT,
@@ -4434,7 +4444,7 @@ SQL_TEMPLATES = {
                                 FROM LIGHTRAG_DOC_FULL WHERE workspace=$1 AND id=$2
                             """,
     "get_by_id_text_chunks": """SELECT id, tokens, COALESCE(content, '') as content,
-                                chunk_order_index, full_doc_id, file_path,
+                                chunk_order_index, doc_id, file_path,
                                 COALESCE(llm_cache_list, '[]'::jsonb) as llm_cache_list,
                                 EXTRACT(EPOCH FROM create_time)::BIGINT as create_time,
                                 EXTRACT(EPOCH FROM update_time)::BIGINT as update_time
@@ -4449,7 +4459,7 @@ SQL_TEMPLATES = {
                                  FROM LIGHTRAG_DOC_FULL WHERE workspace=$1 AND id IN ({ids})
                             """,
     "get_by_ids_text_chunks": """SELECT id, tokens, COALESCE(content, '') as content,
-                                  chunk_order_index, full_doc_id, file_path,
+                                  chunk_order_index, doc_id, file_path,
                                   COALESCE(llm_cache_list, '[]'::jsonb) as llm_cache_list,
                                   EXTRACT(EPOCH FROM create_time)::BIGINT as create_time,
                                   EXTRACT(EPOCH FROM update_time)::BIGINT as update_time
@@ -4497,13 +4507,13 @@ SQL_TEMPLATES = {
                                       update_time = CURRENT_TIMESTAMP
                                      """,
     "upsert_text_chunk": """INSERT INTO LIGHTRAG_DOC_CHUNKS (workspace, id, tokens,
-                      chunk_order_index, full_doc_id, content, file_path, llm_cache_list,
+                      chunk_order_index, doc_id, content, file_path, llm_cache_list,
                       create_time, update_time)
                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                       ON CONFLICT (workspace,id) DO UPDATE
                       SET tokens=EXCLUDED.tokens,
                       chunk_order_index=EXCLUDED.chunk_order_index,
-                      full_doc_id=EXCLUDED.full_doc_id,
+                      doc_id=EXCLUDED.doc_id,
                       content = EXCLUDED.content,
                       file_path=EXCLUDED.file_path,
                       llm_cache_list=EXCLUDED.llm_cache_list,
@@ -4527,13 +4537,13 @@ SQL_TEMPLATES = {
                      """,
     # SQL for VectorStorage
     "upsert_chunk": """INSERT INTO LIGHTRAG_VDB_CHUNKS (workspace, id, tokens,
-                      chunk_order_index, full_doc_id, content, content_vector, file_path,
+                      chunk_order_index, doc_id, content, content_vector, file_path,
                       create_time, update_time)
                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                       ON CONFLICT (workspace,id) DO UPDATE
                       SET tokens=EXCLUDED.tokens,
                       chunk_order_index=EXCLUDED.chunk_order_index,
-                      full_doc_id=EXCLUDED.full_doc_id,
+                      doc_id=EXCLUDED.doc_id,
                       content = EXCLUDED.content,
                       content_vector=EXCLUDED.content_vector,
                       file_path=EXCLUDED.file_path,
