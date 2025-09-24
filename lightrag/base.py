@@ -685,6 +685,7 @@ class BaseGraphStorage(StorageNameSpace, ABC):
             edges: List of edges to be deleted, each edge is a (source, target) tuple
         """
 
+    # TODO: deprecated
     @abstractmethod
     async def get_all_labels(self) -> list[str]:
         """Get all labels in the graph.
@@ -725,6 +726,29 @@ class BaseGraphStorage(StorageNameSpace, ABC):
 
         Returns:
             A list of all edges, where each edge is a dictionary of its properties
+        """
+
+    @abstractmethod
+    async def get_popular_labels(self, limit: int = 300) -> list[str]:
+        """Get popular labels by node degree (most connected entities)
+
+        Args:
+            limit: Maximum number of labels to return
+
+        Returns:
+            List of labels sorted by degree (highest first)
+        """
+
+    @abstractmethod
+    async def search_labels(self, query: str, limit: int = 50) -> list[str]:
+        """Search labels with fuzzy matching
+
+        Args:
+            query: Search query string
+            limit: Maximum number of results to return
+
+        Returns:
+            List of matching labels sorted by relevance
         """
 
 
@@ -813,6 +837,18 @@ class DocStatusStorage(BaseKVStorage, ABC):
 
         Returns:
             Dictionary mapping status names to counts
+        """
+
+    @abstractmethod
+    async def get_doc_by_file_path(self, file_path: str) -> dict[str, Any] | None:
+        """Get document by file path
+
+        Args:
+            file_path: The file path to search for
+
+        Returns:
+            dict[str, Any] | None: Document data if found, None otherwise
+            Returns the same format as get_by_ids method
         """
 
 
