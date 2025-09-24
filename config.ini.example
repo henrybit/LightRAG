@@ -1,7 +1,7 @@
 [neo4j]
-uri = neo4j+s://xxxxxxxx.databases.neo4j.io
+uri = neo4j://localhost:7687
 username = neo4j
-password = your-password
+password = henrybit
 connection_pool_size = 100
 connection_timeout = 30.0
 connection_acquisition_timeout = 30.0
