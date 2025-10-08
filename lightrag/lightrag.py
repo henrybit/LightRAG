@@ -14,6 +14,7 @@ from typing import (
     AsyncIterator,
     Callable,
     Iterator,
+    Tuple,
     cast,
     final,
     Literal,
@@ -1148,7 +1149,6 @@ class LightRAG:
         # Store document status (without content)
         await self.doc_status.upsert(new_docs)
         logger.debug(f"Stored {len(new_docs)} new unique documents")
-
         return track_id
 
     async def apipeline_enqueue_error_documents(

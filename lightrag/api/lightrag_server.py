@@ -232,9 +232,9 @@ def create_app(args):
             else ""
         ),
         "version": __api_version__,
-        "openapi_url": "/openapi.json",  # Explicitly set OpenAPI schema URL
-        "docs_url": "/docs",  # Explicitly set docs URL
-        "redoc_url": "/redoc",  # Explicitly set redoc URL
+        "openapi_url": None if os.getenv("ENV") == "production" else "/openapi.json",  # Explicitly set OpenAPI schema URL
+        "docs_url": None if os.getenv("ENV") == "production" else "/docs",  # Explicitly set docs URL
+        "redoc_url": None if os.getenv("ENV") == "production" else "/redoc",  # Explicitly set redoc URL
         "lifespan": lifespan,
     }
 

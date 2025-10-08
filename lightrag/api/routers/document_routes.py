@@ -222,6 +222,7 @@ class InsertResponse(BaseModel):
     )
     message: str = Field(description="Message describing the operation result")
     track_id: str = Field(description="Tracking ID for monitoring processing status")
+    doc_id: Optional[str] = Field(default='', description="Document ID for the inserted document")
 
     class Config:
         json_schema_extra = {
@@ -229,6 +230,7 @@ class InsertResponse(BaseModel):
                 "status": "success",
                 "message": "File 'document.pdf' uploaded successfully. Processing will continue in background.",
                 "track_id": "upload_20250729_170612_abc123",
+                "doc_id": "doc_123456"
             }
         }
 
@@ -834,8 +836,8 @@ def get_unique_filename_in_enqueued(target_dir: Path, original_name: str) -> str
 
 
 async def pipeline_enqueue_file(
-    rag: LightRAG, file_path: Path, track_id: str = None
-) -> tuple[bool, str]:
+    rag: LightRAG, file_path: Path, track_id: str = None, doc_id: str = None
+) -> tuple[bool, str, str]:
     """Add a file to the queue for processing
 
     Args:
@@ -843,7 +845,7 @@ async def pipeline_enqueue_file(
         file_path: Path to the saved file
         track_id: Optional tracking ID, if not provided will be generated
     Returns:
-        tuple: (success: bool, track_id: str)
+        tuple: (success: bool, track_id: str, doc_id: str)
     """
 
     # Generate track_id if not provided
@@ -878,7 +880,7 @@ async def pipeline_enqueue_file(
             logger.error(
                 f"[File Extraction]Permission denied reading file: {file_path.name}"
             )
-            return False, track_id
+            return False, track_id, ''
         except FileNotFoundError as e:
             error_files = [
                 {
@@ -890,7 +892,7 @@ async def pipeline_enqueue_file(
             ]
             await rag.apipeline_enqueue_error_documents(error_files, track_id)
             logger.error(f"[File Extraction]File not found: {file_path.name}")
-            return False, track_id
+            return False, track_id, ''
         except Exception as e:
             error_files = [
                 {
@@ -904,7 +906,7 @@ async def pipeline_enqueue_file(
             logger.error(
                 f"[File Extraction]Error reading file {file_path.name}: {str(e)}"
             )
-            return False, track_id
+            return False, track_id, ''
 
         # Process based on file type
         try:
@@ -1192,7 +1194,7 @@ async def pipeline_enqueue_file(
             logger.error(
                 f"[File Extraction]Unexpected error during {file_path.name} extracting: {str(e)}"
             )
-            return False, track_id
+            return False, track_id, ''
 
         # Insert into the RAG queue
         if content:
@@ -1210,13 +1212,13 @@ async def pipeline_enqueue_file(
                 logger.warning(
                     f"[File Extraction]File contains only whitespace characters: {file_path.name}"
                 )
-                return False, track_id
+                return False, track_id, ''
             # create uuid for this document
             # TODO
-            document_uuid = uuid.uuid4().hex
+            # document_uuid = uuid.uuid4().hex
             try:
-                await rag.apipeline_enqueue_documents(
-                    content, file_paths=file_path.name, track_id=track_id
+                _ = await rag.apipeline_enqueue_documents(
+                    content, file_paths=file_path.name, track_id=track_id, ids=[doc_id]
                 )
 
                 logger.info(
@@ -1246,7 +1248,7 @@ async def pipeline_enqueue_file(
                     )
                     # Don't affect the main function's success status
 
-                return True, track_id
+                return True, track_id, doc_id
 
             except Exception as e:
                 error_files = [
@@ -1259,7 +1261,7 @@ async def pipeline_enqueue_file(
                 ]
                 await rag.apipeline_enqueue_error_documents(error_files, track_id)
                 logger.error(f"Error enqueueing document {file_path.name}: {str(e)}")
-                return False, track_id
+                return False, track_id, ''
         else:
             error_files = [
                 {
@@ -1271,7 +1273,7 @@ async def pipeline_enqueue_file(
             ]
             await rag.apipeline_enqueue_error_documents(error_files, track_id)
             logger.error(f"No content extracted from file: {file_path.name}")
-            return False, track_id
+            return False, track_id, ''
 
     except Exception as e:
         # Catch-all for any unexpected errors
@@ -1291,7 +1293,7 @@ async def pipeline_enqueue_file(
         await rag.apipeline_enqueue_error_documents(error_files, track_id)
         logger.error(f"Enqueuing file {file_path.name} error: {str(e)}")
         logger.error(traceback.format_exc())
-        return False, track_id
+        return False, track_id, ''
     finally:
         if file_path.name.startswith(temp_prefix):
             try:
@@ -1300,7 +1302,7 @@ async def pipeline_enqueue_file(
                 logger.error(f"Error deleting file {file_path}: {str(e)}")
 
 
-async def pipeline_index_file(rag: LightRAG, file_path: Path, track_id: str = None):
+async def pipeline_index_file(rag: LightRAG, file_path: Path, track_id: str = None, doc_id: str=""):
     """Index a file with track_id
 
     Args:
@@ -1309,8 +1311,8 @@ async def pipeline_index_file(rag: LightRAG, file_path: Path, track_id: str = No
         track_id: Optional tracking ID
     """
     try:
-        success, returned_track_id = await pipeline_enqueue_file(
-            rag, file_path, track_id
+        success, returned_track_id, _ = await pipeline_enqueue_file(
+            rag, file_path, track_id, doc_id
         )
         if success:
             await rag.apipeline_process_enqueue_documents()
@@ -1342,7 +1344,7 @@ async def pipeline_index_files(
 
         # Process files sequentially with track_id
         for file_path in sorted_file_paths:
-            success, _ = await pipeline_enqueue_file(rag, file_path, track_id)
+            success, trace_id, doc_ids = await pipeline_enqueue_file(rag, file_path, track_id)
             if success:
                 enqueued = True
 
@@ -1752,14 +1754,15 @@ def create_document_routes(
                 shutil.copyfileobj(file.file, buffer)
 
             track_id = generate_track_id("upload")
-
+            doc_id = uuid.uuid4().hex
             # Add to background tasks and get track_id
-            background_tasks.add_task(pipeline_index_file, rag, file_path, track_id)
+            background_tasks.add_task(pipeline_index_file, rag, file_path, track_id, doc_id)
 
             return InsertResponse(
                 status="success",
                 message=f"File '{safe_filename}' uploaded successfully. Processing will continue in background.",
                 track_id=track_id,
+                doc_id=doc_id
             )
 
         except Exception as e:
