@@ -473,6 +473,9 @@ def create_app(args):
                 else:  # openai and compatible
                     from lightrag.llm.openai import openai_embed
 
+                    # return await openai_embed(
+                    #     texts, model=model, base_url=host, api_key=api_key
+                    # )
                     return await openai_embed(
                         texts, model=model, base_url=host, api_key=api_key
                     )

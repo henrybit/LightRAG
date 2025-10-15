@@ -390,7 +390,13 @@ async def llm_model_func(
     )
 
 async def embedding_func(texts: list[str]) -> np.ndarray:
-    return await openai_embed(
+    # return await openai_embed(
+    #     texts,
+    #     model="solar-embedding-1-large-query",
+    #     api_key=os.getenv("UPSTAGE_API_KEY"),
+    #     base_url="https://api.upstage.ai/v1/solar"
+    # )
+    return openai_embed(
         texts,
         model="solar-embedding-1-large-query",
         api_key=os.getenv("UPSTAGE_API_KEY"),
